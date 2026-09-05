@@ -5060,27 +5060,45 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
   // eingedrückt, aber es passiert nichts. Darum werden beide Fälle behandelt.
   // Die Spielsteuerung (.ctrl-btn) ist bewusst NICHT erfasst: die hat ihre eigene
   // Halte-Logik in bindHold() und würde sich sonst doppelt auslösen.
-  let tapCandidate = null;
+  // Touch-zu-Klick-Bruecke fuer Menue- und Dialogknoepfe (.btn).
+  // WICHTIG: Nur ein echtes Antippen darf ausloesen, kein Scrollen. Frueher hat auch
+  // touchcancel ausgeloest - das feuert iOS aber genau dann, wenn eine Beruehrung ins
+  // Scrollen uebergeht. Dadurch wurde beim Durchblaettern der Sprungliste immer der
+  // Knopf unter dem Finger gewaehlt. Jetzt zaehlt nur noch touchend, und auch nur,
+  // wenn der Finger dabei praktisch stillstand.
+  let tapCandidate = null, tapX = 0, tapY = 0, tapTime = 0, tapMoved = false;
   let synthClick = false;
   document.addEventListener('touchstart', (e) => {
     const t = e.target;
     tapCandidate = (t && t.closest) ? t.closest('.btn') : null;
+    const p = e.touches && e.touches[0];
+    tapX = p ? p.clientX : 0;
+    tapY = p ? p.clientY : 0;
+    tapTime = Date.now();
+    tapMoved = false;
   }, {passive:true});
-  const fireTapped = (e) => {
+  document.addEventListener('touchmove', (e) => {
+    if (!tapCandidate || tapMoved) return;
+    const p = e.touches && e.touches[0];
+    if (!p) return;
+    if (Math.abs(p.clientX - tapX) > 10 || Math.abs(p.clientY - tapY) > 10) tapMoved = true;
+  }, {passive:true});
+  document.addEventListener('touchend', (e) => {
     const btn = tapCandidate;
     tapCandidate = null;
-    if (!btn || btn.classList.contains('hidden') || btn.disabled) return;
+    if (!btn || tapMoved) return;                       // gescrollt -> nichts tun
+    if (Date.now() - tapTime > 800) return;             // langes Halten -> nichts tun
+    if (btn.classList.contains('hidden') || btn.disabled) return;
     const now = Date.now();
     if (btn.__lastTap && now - btn.__lastTap < 600) return;
     btn.__lastTap = now;
-    if (e && e.cancelable) e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     synthClick = true;
     try { btn.click(); } finally { synthClick = false; }
-  };
-  document.addEventListener('touchend', fireTapped, {passive:false});
-  document.addEventListener('touchcancel', fireTapped, {passive:false});
-  // Falls iOS doch noch einen eigenen Klick hinterherschickt, wird der geschluckt -
-  // sonst liefe die Aktion zweimal (z.B. Dialog zwei Zeilen weiterspringen).
+  }, {passive:false});
+  // Beim Scrollen bricht iOS die Beruehrung ab - dann bewusst NICHTS ausloesen.
+  document.addEventListener('touchcancel', () => { tapCandidate = null; }, {passive:true});
+  // Falls iOS zusaetzlich einen eigenen Klick schickt, wird der geschluckt.
   document.addEventListener('click', (e) => {
     if (synthClick) return;
     const t = e.target;
