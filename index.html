@@ -3694,6 +3694,15 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     { id:'d3', x: CFOREST_X0 + 5900, hp: 85, maxHp: 85, state:'idle', dir:-1, hurtT:0, drop:'banner', deathT:0, animT:0 },
   ];
   // Grosses Lagerfeuer, Zelt und die Fundorte der Zutaten fuer den Abend.
+  // Eigener kleiner Innenraum fuer das Zeltgespraech am Abend
+  const ETENT_ROOM_X0 = 720000;
+  const ETENT_ROOM_LEN = 360;
+  let inEveTent = false;
+  islands.push({x: ETENT_ROOM_X0 - 40, y: NEWZONE2_Y, w: ETENT_ROOM_LEN + 80, h: 400, deepFill:true});
+  islands.push({x: ETENT_ROOM_X0 - 40, y: NEWZONE2_Y - 900, w: 40, h: 1300});
+  islands.push({x: ETENT_ROOM_X0 + ETENT_ROOM_LEN, y: NEWZONE2_Y - 900, w: 40, h: 1300});
+  WORLD_W = Math.max(WORLD_W, ETENT_ROOM_X0 + ETENT_ROOM_LEN + 400);
+
   const EVE_FIRE_X = CAMP_X0 + 2900;
   const EVE_TENT_X = CAMP_X0 + 3450;
   const EVE_COOK_X = CAMP_X0 + 2150;
@@ -4235,6 +4244,11 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
   let kingAtCamp = false;
   // Der Abend vor der Schlacht: Feuer, Zeltgespraech, das Essen.
   // none -> fire -> tent -> shopping -> cooked -> done
+  // Die Maenner, die sich beim Anwerbe-Gespraech um Tobi und Jenny stellen.
+  let pitGathering = false;      // Menge steht da
+  let pitBrockenFront = false;   // Brocken ist vorgetreten
+  let pitCrowdX = 0;
+  let pitCrowdT = 0;
   let eveningState = 'none';
   let mealDone = false;
   const MEAL_ITEMS = [
@@ -6000,6 +6014,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
 
     player.vy += GRAVITY;
     if (jennyJumpOrbT > 0) jennyJumpOrbT--;
+    if (pitGathering && pitCrowdT < 400) pitCrowdT++;
     if (jennyBigOrbT > 0) jennyBigOrbT--;
     if (jennyQuadJumpUnlocked && jennyQuadCharge < JENNY_QUAD_COOLDOWN) jennyQuadCharge++;
     // Sonderfall Schlucht: steht sie unten fest, laedt der Sprung sofort wieder auf.
@@ -7282,8 +7297,9 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     const nearEveCook = eveningState === 'tent' && typeof EVE_COOK_X !== 'undefined' &&
       activeInterior === 'none' && Math.abs(player.x - EVE_COOK_X) < 55;
     const nearEveTent = (eveningState === 'tent' || eveningState === 'cooked') &&
-      typeof EVE_TENT_X !== 'undefined' && activeInterior === 'none' &&
+      typeof EVE_TENT_X !== 'undefined' && activeInterior === 'none' && !inEveTent &&
       Math.abs(player.x - EVE_TENT_X) < 60;
+    const nearEveTentExit = inEveTent && player.x < ETENT_ROOM_X0 + 52;
     const nearMealItem = eveningState === 'shopping' && typeof MEAL_SPOTS !== 'undefined'
       ? MEAL_ITEMS.find(it => !it.taken && Math.abs(player.x - MEAL_SPOTS[it.id]) < 42) : null;
     const nearPitShaft = kingConvinced && !prisonersRecruited && selectedChar === 0 &&
@@ -7305,7 +7321,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     const nearKingCliff = warCouncilState === 'kingAtCliff' && !inCouncilTent && !inLeaderCave && activeInterior === 'none' &&
       Math.abs(player.x - CLIFF_X) < 55;
     document.getElementById('btnDoor').classList.toggle('hidden', !(nearDoorName || (activeInterior !== 'none' && activeInterior !== 'caveTunnel') || inJennyHouse || inMonastery || (player.x > MOUNTAIN_X0 && Math.abs(player.x - monasteryDoorX) < 30) || village3InteriorOpenIdx !== -1 || nearZone2Interactable || nearCampNpc || nearCampPickup || nearDeserter || nearCaveThing || nearCouncilTent || nearKingCliff || nearHuntNpc || nearInnFolk || nearInnDoor || nearPrisonNpc || nearTunnelMouth || nearTunnelExit || nearTrappedMan || nearJennyCliff || nearJennyClearing || nearJennyTrace || nearKingHut || nearKingCorner || nearPitShaft
-        || nearEveFire || nearEveCook || nearEveTent || nearMealItem));
+        || nearEveFire || nearEveCook || nearEveTent || nearMealItem || nearEveTentExit));
     if (keys.upPressed){
       keys.upPressed = false;
       if (nearDeserter && !dialogOpen){
@@ -7376,7 +7392,26 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
         return;
       }
       if (nearEveTent && !dialogOpen){
-        if (eveningState === 'cooked') startMealScene(); else startTentTalk();
+        if (eveningState === 'cooked'){ startMealScene(); return; }
+        // wirklich hineingehen, statt nur davor zu stehen
+        inEveTent = true;
+        player.x = ETENT_ROOM_X0 + 40;
+        player.y = NEWZONE2_Y - player.h;
+        player.vx = 0; player.vy = 0;
+        camX = ETENT_ROOM_X0; camY = 0;
+        sfxDoor();
+        startTentTalk();
+        return;
+      }
+      // Zelt wieder verlassen
+      if (inEveTent && !dialogOpen && player.x < ETENT_ROOM_X0 + 46){
+        inEveTent = false;
+        player.x = EVE_TENT_X;
+        player.y = NEWZONE2_Y - player.h;
+        player.vx = 0; player.vy = 0;
+        camX = Math.max(0, Math.min(player.x - VIEW_W/2, WORLD_W - VIEW_W));
+        camY = 0;
+        sfxDoor();
         return;
       }
       if (nearPitShaft && !dialogOpen){
@@ -7897,7 +7932,12 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     document.getElementById('btnAttack').classList.toggle('hidden', !(player.hasSword || (staffCharged && selectedChar===1)));
     document.getElementById('swordPill').classList.toggle('hidden', !player.hasSword);
 
-    if (inKingHut){
+    if (inEveTent){
+      camX = ETENT_ROOM_X0;
+      camY = 0;
+      if (player.x < ETENT_ROOM_X0 + 20) player.x = ETENT_ROOM_X0 + 20;
+      if (player.x > ETENT_ROOM_X0 + ETENT_ROOM_LEN - 20) player.x = ETENT_ROOM_X0 + ETENT_ROOM_LEN - 20;
+    } else if (inKingHut){
       camX = KHUT_ROOM_X0;
       camY = 0;
       if (player.x < KHUT_ROOM_X0 + 20) player.x = KHUT_ROOM_X0 + 20;
@@ -14364,6 +14404,9 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
       }
       // Nach der Ueberzeugung des Koenigs: die Maenner fuer die Schlacht gewinnen
       if (kingConvinced && !prisonersRecruited){
+        // die Maenner kommen sichtbar zusammen, sobald das Gespraech anfaengt
+        pitGathering = true; pitBrockenFront = false; pitCrowdT = 0;
+        pitCrowdX = player.x;
         return ask('Oller Fint sieht die beiden an, als hätte er auf diesen Moment gewartet.\n\nOller Fint: "Zurückgekommen. Freiwillig. In die Grube." Er lacht rau. "Das macht keiner ohne Grund."', [
           { label: 'Es gibt eine Schlacht. Wir brauchen jeden Mann.',
             action: () => showEnd('Oller Fint: "Eine Schlacht." Er sagt es, als wäre es ein Wort in einer fremden Sprache.', () => prisonersObjection()) },
@@ -16030,6 +16073,46 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     ctx.restore();
   }
 
+  // Innenansicht des Zeltes am Abend vor der Schlacht
+  function drawEveTentInterior(){
+    if (!inEveTent) return;
+    const gY = NEWZONE2_Y - camY;
+    ctx.save();
+    // Zeltbahn als Hintergrund
+    const bg = ctx.createLinearGradient(0,0,0,VIEW_H);
+    bg.addColorStop(0, '#2a2118'); bg.addColorStop(0.6,'#231b14'); bg.addColorStop(1,'#171009');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    // schraege Zeltstangen und Nahtlinien
+    ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth = 2;
+    for (let i=-2;i<8;i++){
+      const x = i*70 + 20;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 46, gY); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(120,96,64,0.35)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, 34); ctx.lineTo(VIEW_W, 22); ctx.stroke();
+    // Boden: Decken und Stroh
+    ctx.fillStyle = '#3a2c1d'; ctx.fillRect(0, gY, VIEW_W, VIEW_H-gY);
+    ctx.fillStyle = 'rgba(90,70,45,0.5)';
+    for (let i=0;i<9;i++) ctx.fillRect((i*58+12)%VIEW_W, gY+4+(i%3)*4, 34, 3);
+    // Laterne, die alles warm ausleuchtet
+    const lx = ETENT_ROOM_X0 + ETENT_ROOM_LEN - 90 - camX;
+    const fl = 0.78 + 0.22*Math.sin(Date.now()/230);
+    const g = ctx.createRadialGradient(lx, gY-52, 0, lx, gY-52, 130*fl);
+    g.addColorStop(0, `rgba(255,190,105,${0.32*fl})`);
+    g.addColorStop(1, 'rgba(255,170,80,0)');
+    ctx.fillStyle = g; ctx.fillRect(lx-140, gY-180, 280, 190);
+    ctx.fillStyle = '#5a4630'; ctx.fillRect(lx-4, gY-46, 8, 12);
+    ctx.fillStyle = `rgba(255,214,130,${0.95*fl})`;
+    ctx.beginPath(); ctx.arc(lx, gY-52, 6*fl, 0, Math.PI*2); ctx.fill();
+    // Ausgang links
+    const ex = ETENT_ROOM_X0 + 18 - camX;
+    ctx.fillStyle = 'rgba(150,170,190,0.12)';
+    ctx.fillRect(ex-16, gY-64, 32, 64);
+    ctx.textAlign='center'; ctx.font='bold 9px sans-serif'; ctx.fillStyle='rgba(220,220,225,0.55)';
+    ctx.fillText('Ausgang', ex, gY-72);
+    ctx.restore();
+  }
+
   function drawKingHutInterior(){
     if (!inKingHut) return;
     const gY = NEWZONE2_Y - camY;
@@ -16084,6 +16167,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
   // Der Einwand der Gefangenen: raus koennen sie nicht, ohne erschlagen zu werden.
   // Erst als sie hoeren, dass keine Soldaten mehr da sind, kippt es.
   function prisonersObjection(){
+    pitBrockenFront = true;
     showDialogSequence([
       'Brocken schiebt sich nach vorn, bevor der Alte weiterreden kann.',
       'Brocken: "Und dann? Wir gehen hier raus, und oben stehen die Soldaten. Die erschlagen uns, bevor wir hundert Schritt weit sind. So läuft das."',
@@ -16127,7 +16211,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
       'Jenny braucht einen Moment. Dann steht sie auf.',
       'Jenny: "Dann sag mir, was du brauchst. Der Koch hat bestimmt was da."',
     ], () => {
-      showNpcDialog('Sprich mit dem Koch am Kessel.');
+      showNpcDialog('Verlass das Zelt nach links und sprich mit dem Koch am Kessel.');
     });
   }
 
@@ -16170,6 +16254,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
   }
 
   function recruitPrisoners(){
+    pitGathering = false; pitBrockenFront = false;
     prisonersRecruited = true;
     monksArrived = true;
     kingAtCamp = true;
@@ -17295,6 +17380,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
   function drawCampAllies(){
     if (typeof campAllies === 'undefined' || typeof CAMP_X0 === 'undefined') return;
     const gY = NEWZONE2_Y - camY;
+    if (eveningState !== 'none') return;   // abends stehen alle am Feuer
     for (const a of campAllies){
       if (a.grp === 'prisoner' && !prisonersRecruited) continue;
       if (a.grp === 'monk'     && !monksArrived)       continue;
@@ -17323,6 +17409,91 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
   }
 
   // Abend vor der Schlacht: grosses Feuer, Zelt, verstreute Zutaten.
+  // Beim Anwerben stellen sich die Maenner sichtbar um die beiden herum - vorher
+  // stand davon nur etwas im Text.
+  const PIT_CROWD = [
+    { off:-155, key:'wb_elder_walk',    h:52, flip:false, back:true  },
+    { off:-118, key:'wb_ragged_walk',   h:55, flip:false, back:false },
+    { off: -86, key:'wb_hood_walk',     h:57, flip:false, back:true  },
+    { off: -58, key:'wb_boy_walk',      h:46, flip:false, back:false },
+    { off:  62, key:'wb_bandana_walk',  h:54, flip:true,  back:false },
+    { off:  92, key:'wb_vest_fight',    h:56, flip:true,  back:true  },
+    { off: 126, key:'wb_scarred_fight', h:58, flip:true,  back:false },
+    { off: 162, key:'wb_hammer_fight',  h:57, flip:true,  back:true  },
+    { off: 198, key:'wb_bald_walk',     h:55, flip:true,  back:false },
+    { off:-192, key:'wb_ragged_fight',  h:56, flip:false, back:true  },
+  ];
+  function drawPitGathering(){
+    if (!pitGathering) return;
+    const gY = PRISON_Y - camY;
+    for (let i=0;i<PIT_CROWD.length;i++){
+      const m = PIT_CROWD[i];
+      // sie treten nacheinander heran
+      const t = Math.min(1, Math.max(0, (pitCrowdT - i*6) / 26));
+      if (t <= 0) continue;
+      const startOff = m.off * 2.4;
+      const off = startOff + (m.off - startOff) * t;
+      const sx = (pitCrowdX + off) - camX;
+      if (sx < -70 || sx > VIEW_W + 70) continue;
+      const bob = Math.sin(Date.now()/640 + i*1.7) * 1.2;
+      ctx.save();
+      if (m.back) ctx.globalAlpha = 0.72;
+      drawImgSprite(m.key, sx, gY - (m.back ? 12 : 0) + bob, m.back ? m.h*0.88 : m.h, m.flip);
+      ctx.restore();
+    }
+    // Brocken tritt vor, sobald er das Wort ergreift
+    if (pitBrockenFront){
+      const bt = Math.min(1, pitBrockenFront === true ? 1 : 1);
+      const bx = (pitCrowdX + 72) - camX;
+      if (bx > -70 && bx < VIEW_W + 70){
+        const bob = Math.sin(Date.now()/520) * 1.4;
+        drawImgSprite('pr_nv11', bx, gY + bob, 62, true);
+      }
+    }
+  }
+
+  // Alle Gruppen sitzen und stehen abends um dasselbe Feuer.
+  // Vordere Reihe naeher am Feuer, hintere kleiner und blasser dahinter.
+  const FIRE_CIRCLE = [
+    // links vom Feuer
+    { off:-268, key:'wb_elder_walk',    h:52, flip:false, back:true  },
+    { off:-232, key:'wb_ragged_walk',   h:55, flip:false, back:false },
+    { off:-198, key:'wb_hammer_fight',  h:57, flip:false, back:true  },
+    { off:-166, key:'wb_scarred_fight', h:56, flip:false, back:false },
+    { off:-134, key:'wb_boy_walk',      h:46, flip:false, back:true  },
+    { off:-104, key:'desIdle1',         h:56, flip:false, back:false },
+    { off: -74, key:'desIdle2',         h:56, flip:false, back:true  },
+    { off: -46, key:'abbotIdle',        h:58, flip:false, back:false },
+    // rechts vom Feuer
+    { off:  46, key:'kingFightIdle',    h:64, flip:true,  back:false },
+    { off:  78, key:'npcCaptain1',      h:58, flip:true,  back:false },
+    { off: 108, key:'stewardIdle1',     h:56, flip:true,  back:true  },
+    { off: 140, key:'abbotWalk1',       h:56, flip:true,  back:false },
+    { off: 170, key:'abbotIdle',        h:57, flip:true,  back:true  },
+    { off: 202, key:'soldierSpearIdle1',h:57, flip:true,  back:false },
+    { off: 234, key:'soldierSwordIdle1',h:57, flip:true,  back:true  },
+    { off: 266, key:'knight1',          h:56, flip:true,  back:false },
+    // Dorfbewohner etwas abseits
+    { off:-320, key:'dv_mother',        h:54, flip:false, back:true  },
+    { off:-292, key:'dv_elder',         h:52, flip:false, back:false },
+    { off: 300, key:'dv_smith',         h:56, flip:true,  back:true  },
+    { off: 330, key:'dv_hunter',        h:55, flip:true,  back:false },
+  ];
+  function drawFireCircle(){
+    if (eveningState === 'none' || typeof EVE_FIRE_X === 'undefined') return;
+    const gY = NEWZONE2_Y - camY;
+    for (let i=0;i<FIRE_CIRCLE.length;i++){
+      const f = FIRE_CIRCLE[i];
+      const sx = (EVE_FIRE_X + f.off) - camX;
+      if (sx < -70 || sx > VIEW_W + 70) continue;
+      const bob = Math.sin(Date.now()/760 + i*1.3) * 1.1;
+      ctx.save();
+      if (f.back) ctx.globalAlpha = 0.74;
+      drawImgSprite(f.key, sx, gY - (f.back ? 13 : 0) + bob, f.back ? f.h*0.9 : f.h, f.flip);
+      ctx.restore();
+    }
+  }
+
   function drawEveningScene(){
     if (eveningState === 'none' || typeof CAMP_X0 === 'undefined') return;
     const gY = NEWZONE2_Y - camY;
@@ -20541,6 +20712,11 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
         drawProjectiles();
         drawDeathEffects();
         drawPlayer();
+      } else if (inEveTent){
+        drawEveTentInterior();
+        drawProjectiles();
+        drawDeathEffects();
+        drawPlayer();
       } else if (inKingHut){
         drawKingHutInterior();
         drawKingHutNpc();
@@ -20589,6 +20765,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
         applyEscapeCamera();
         drawCampBackground();
         drawCampAllies();
+        drawFireCircle();
         drawEveningScene();
         drawHuntBackground();
         drawJennyWayBackground();
@@ -20633,6 +20810,7 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
         drawHuntNpcs();
         drawPrisonHuts();
         drawPrisonVignettes();
+        drawPitGathering();
         drawBrawlCrowd();
         drawPrisonWanderers();
         drawPrisonNpcs();
@@ -21754,6 +21932,8 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     jennyAtVillage = false;
     reunionState = 'none'; reunionT = 0;
     inKingHut = false; tobiChaseCompanion = false;
+    pitGathering = false; pitBrockenFront = false; pitCrowdT = 0;
+    inEveTent = false;
     if (!t.campGathered && !t.recruitReady){
       prisonersRecruited = false; monksArrived = false; kingAtCamp = false;
     }
@@ -21903,6 +22083,61 @@ if (typeof module !== 'undefined') module.exports = globalThis.GrubenBG;
     showScreen(null);
   }
   const teleRow = document.getElementById('dbgTeleportRow');
+  // Chronologische Reihenfolge nach Handlungsverlauf. Die Sprungliste ist ueber viele
+  // Sitzungen gewachsen und stand deshalb kreuz und quer. Hier wird sie vor dem
+  // Aufbau der Knoepfe sortiert; was nicht aufgefuehrt ist, landet hinten.
+  const TELEPORT_ORDER = [
+    // --- Tobi allein, Anfang ---
+    'Start (Tobi)','Wiese','Königreich','Turm-Eingang','Boss-Raum',
+    // --- Jenny allein ---
+    'Dorf 2 (Jenny)','Zone 5 Wald','Burg','Wald 2','Lehrerin-Hütte','Magierturm (Kristall)',
+    // --- gemeinsam ---
+    'Wald zu zweit','Kultist-Arena','Jennys Lager','Stadt (Händler)','Verwüstete Lande',
+    'Gebirge (Fuß)','Kloster (Gipfel)','Gipfel (Feuer)',
+    'Höhle','Höhle (Ausgang)','Höhle (untere Ebene)','Höhle (2. Loch)','Höhle (Abt-Ebene)',
+    'Bergabstieg (Platzhalter)','Tal (Rastplatz)','Waldtal (Kampf)','Wald-Boss (mit Abt)',
+    'Trainingsplatz','Training (Endkampf, 10 HP)',
+    'Abstieg (Start, echter Trigger)','Abstieg (Start)','Abstieg (Zehner-Welle)',
+    'Abstieg (Zwei Monster)','Abstieg (Verfolger-Boss)',
+    // --- neues Gebiet: Dorf, Burg, Turm ---
+    'Wiese / Dorf (neues Gebiet)','Heiler-Hütte (neues Gebiet)','Weg zur Burg (neues Gebiet)',
+    'Torwachen Burg (neues Gebiet)','Burg-Innenhof (neues Gebiet)','Innenhof: nach 1. Verwalter-Gespräch',
+    'Wald hinter der Burg (neues Gebiet)','Turm im offenen Areal (neues Gebiet)',
+    'Zweiter Wald / Loch (neues Gebiet)','Untere Ebene / Zutat (neues Gebiet)',
+    'Sprung-Areal Start (neues Gebiet)','Zweite Zutat (neues Gebiet)','Dritte Zutat (neues Gebiet)',
+    'Herrschersaal (Tobi)','Golem-Höhle (Tobi, Rüstungs-Auftrag)','Vor dem Turm (Tobi, Auftrag erteilt)',
+    'Bei der Heilerin (Suche nach Jenny)','Vor dem Jenny-Kampf (Auslöser gleich)',
+    'Rückweg zum Turm (nach Jenny-Wiedersehen)','Vor Tobis Wutverwandlung',
+    'Nach Thronsaal (Weg zur Heilerin)','Vor dem Dämonenkrieger-Bosskampf',
+    'Verfolgungs-Sprungabschnitt (Jenny)',
+    // --- Kriegslager ---
+    'Kriegslager (neues Areal)','Fuß des Berges (Kriegslager)','Westwald (Quest-Gebiet)',
+    'Deserteur-Höhle (Anführer)','Lager: Höhle erledigt (Hauptmann-Hinweis)',
+    'Lager: alle Aufträge erledigt (Schmied)',
+    'Gipfel + Kriegsratszelt','Kriegsratszelt (innen)','Kriegsrat: Hauptmann ansprechen',
+    'Herrscher an der Klippe',
+    // --- Tobis Suche ---
+    'Suche: Eröffnungs-Cutscene','Suche: Wald 1','Suche: Kaputtes Dorf','Suche: Wald 2',
+    'Suche: Grab am Hang','Suche: Abstieg','Suche: Talsohle (viele Gegner)',
+    'Suche: Gasthaus (außen)','Suche: Gasthaus (innen)',
+    // --- die Grube ---
+    'Grube: Ankunft (Westwand)','Grube: Mitte','Grube: Ostwand (Winde)',
+    'Grube: Wandkarte (Zeichner)','Grube: Prangerszene','Grube: Bergmann','Grube: Junge',
+    'Grube: Passant testen','Grube: Stollen (Sperber)','Grube: Stollen (innen)',
+    'Grube: Flucht (Winde, alles bereit)',
+    // --- nach der Flucht ---
+    'Gasthaus: Rückkehr nach der Flucht',
+    'Jenny: Zeltgespräch','Jenny: An der Klippe','Jenny: Seeufer (nach dem Sprung)',
+    'Jenny: Lichtung (Blick aufs Dorf)','Jenny: Wiedersehen im Gasthaus',
+    'Dorf: Königs-Hütte (Verfolgung aktiv)',
+    // --- vor der Schlacht ---
+    'Grube: Männer anwerben (nach Hütte)','Lager: Sammlung vor der Schlacht',
+    'Lager: Abend vor der Schlacht',
+  ];
+  debugTeleports.sort((a,b) => {
+    const ia = TELEPORT_ORDER.indexOf(a.label), ib = TELEPORT_ORDER.indexOf(b.label);
+    return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib);
+  });
   debugTeleports.forEach(t=>{
     const b = document.createElement('button');
     b.className = 'btn secondary';
